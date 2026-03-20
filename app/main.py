@@ -1,3 +1,7 @@
+import time
+
+from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from fastapi import FastAPI
 
 from api.routes.users import router as users_router
@@ -6,9 +10,25 @@ from db.session import Base, engine
 
 app = FastAPI()
 
-Base.metadata.create_all(bind=engine)
-
 app.include_router(users_router)
+
+
+def wait_for_database(max_attempts: int = 10, delay_seconds: int = 2) -> None:
+    for attempt in range(1, max_attempts + 1):
+        try:
+            with engine.connect() as connection:
+                connection.execute(text("SELECT 1"))
+            Base.metadata.create_all(bind=engine)
+            return
+        except OperationalError:
+            if attempt == max_attempts:
+                raise
+            time.sleep(delay_seconds)
+
+
+@app.on_event("startup")
+def startup() -> None:
+    wait_for_database()
 
 
 @app.get("/")
